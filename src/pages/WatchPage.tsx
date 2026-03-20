@@ -94,7 +94,7 @@ export default function WatchPage() {
     return isSeries
       ? [
           `https://multiembed.mov/?video_id=${title}&tmdb=0&s=1&e=1`,
-          `https://www.2embed.cc/embedtv/${title}&s=1&e=1`,
+          `https://www.2embed.cc/embedtv/${title}?s=1&e=1`,
           `https://embed.su/embed/tv/${title}/1/1`,
           `https://vidsrc.xyz/embed/tv?tmdb=${title}&season=1&episode=1`,
         ]
