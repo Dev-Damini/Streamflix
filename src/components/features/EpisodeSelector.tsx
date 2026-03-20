@@ -63,7 +63,7 @@ export default function EpisodeSelector({ movie, onSelectEpisode }: EpisodeSelec
       title: `Episode ${i + 1}`,
       episode: i + 1,
       season: selectedSeason,
-      streamUrl: `https://multiembed.mov/?video_id=${encodeURIComponent(movie.title)}&tmdb=0&s=${selectedSeason}&e=${i + 1}`,
+      streamUrl: `https://vidsrc.me/embed/tv?title=${encodeURIComponent(movie.title)}&s=${selectedSeason}&e=${i + 1}`,
     }));
   };
 
@@ -84,7 +84,7 @@ export default function EpisodeSelector({ movie, onSelectEpisode }: EpisodeSelec
     // Fallback: generate vidsrc embed URL for this episode
     const season = ep.season || selectedSeason;
     const episode = ep.episode || epIndex + 1;
-    return `https://multiembed.mov/?video_id=${encodeURIComponent(movie.title)}&tmdb=0&s=${season}&e=${episode}`;
+    return `https://vidsrc.me/embed/tv?title=${encodeURIComponent(movie.title)}&s=${season}&e=${episode}`;
   };
 
   if (isLoading) {

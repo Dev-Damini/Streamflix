@@ -90,19 +90,21 @@ export default function WatchPage() {
   const getEmbedProviders = useCallback((): string[] => {
     if (!movie?.title) return [];
     const title = encodeURIComponent(movie.title);
+    const year = movie.releaseDate ? movie.releaseDate.substring(0, 4) : "";
+    const titleYear = year ? encodeURIComponent(`${movie.title} ${year}`) : title;
     const isSeries = movie.subjectType === 2;
     return isSeries
       ? [
+          `https://vidsrc.me/embed/tv?title=${title}&s=1&e=1`,
           `https://multiembed.mov/?video_id=${title}&tmdb=0&s=1&e=1`,
-          `https://www.2embed.cc/embedtv/${title}?s=1&e=1`,
-          `https://embed.su/embed/tv/${title}/1/1`,
-          `https://vidsrc.xyz/embed/tv?tmdb=${title}&season=1&episode=1`,
+          `https://player.autoembed.cc/embed/tv/${titleYear}/1/1`,
+          `https://vidsrc.to/embed/tv/${titleYear}`,
         ]
       : [
+          `https://vidsrc.me/embed/movie?title=${title}`,
           `https://multiembed.mov/?video_id=${title}&tmdb=0`,
-          `https://www.2embed.cc/embed/${title}`,
-          `https://embed.su/embed/movie/${title}`,
-          `https://vidsrc.xyz/embed/movie?tmdb=${title}`,
+          `https://player.autoembed.cc/embed/movie/${titleYear}`,
+          `https://vidsrc.to/embed/movie/${titleYear}`,
         ];
   }, [movie]);
 
@@ -253,9 +255,9 @@ export default function WatchPage() {
                         src={streamUrl}
                         className="w-full h-full border-0"
                         allowFullScreen
-                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; payment"
+                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; payment; clipboard-write"
                         title={movie.title}
-                        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-presentation allow-top-navigation-by-user-activation"
+                        referrerPolicy="no-referrer"
                       />
                       {/* Fullscreen tap overlay — bottom-right corner */}
                       <button
