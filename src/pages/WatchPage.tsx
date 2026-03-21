@@ -6,7 +6,6 @@ import {
   Star,
   AlertCircle,
   Loader2,
-  ExternalLink,
   Play,
   Film,
   Bookmark,
@@ -91,22 +90,27 @@ export default function WatchPage() {
     if (!movie?.title) return [];
     const title = encodeURIComponent(movie.title);
     const year = movie.releaseDate ? movie.releaseDate.substring(0, 4) : "";
-    const titleYear = year ? encodeURIComponent(`${movie.title} ${year}`) : title;
+    const titleSlug = movie.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
     const isSeries = movie.subjectType === 2;
-    return isSeries
-      ? [
-          `https://vidsrc.me/embed/tv?title=${title}&s=1&e=1`,
-          `https://multiembed.mov/?video_id=${title}&tmdb=0&s=1&e=1`,
-          `https://player.autoembed.cc/embed/tv/${titleYear}/1/1`,
-          `https://vidsrc.to/embed/tv/${titleYear}`,
-        ]
-      : [
-          `https://vidsrc.me/embed/movie?title=${title}`,
-          `https://multiembed.mov/?video_id=${title}&tmdb=0`,
-          `https://player.autoembed.cc/embed/movie/${titleYear}`,
-          `https://vidsrc.to/embed/movie/${titleYear}`,
-        ];
-  }, [movie]);
+    if (isSeries) {
+      const s = currentEpisodeLabel ? parseInt(currentEpisodeLabel.match(/S(\d+)/)?.[1] || "1") : 1;
+      const e = currentEpisodeLabel ? parseInt(currentEpisodeLabel.match(/E(\d+)/)?.[1] || "1") : 1;
+      return [
+        `https://player.autoembed.cc/embed/tv/${title}/${s}/${e}`,
+        `https://multiembed.mov/?video_id=${title}&tmdb=0&s=${s}&e=${e}`,
+        `https://vidsrc.me/embed/tv?title=${title}&s=${s}&e=${e}`,
+        `https://embed.su/embed/tv/${titleSlug}/${s}/${e}`,
+        `https://www.2embed.cc/embedtv/${title}?s=${s}&e=${e}`,
+      ];
+    }
+    return [
+      `https://player.autoembed.cc/embed/movie/${title}${year ? `?year=${year}` : ""}`,
+      `https://multiembed.mov/?video_id=${title}&tmdb=0`,
+      `https://vidsrc.me/embed/movie?title=${title}`,
+      `https://embed.su/embed/movie/${titleSlug}`,
+      `https://www.2embed.cc/embed/${title}`,
+    ];
+  }, [movie, currentEpisodeLabel]);
 
   // Build embed URL
   const getStreamUrl = (): string | null => {
@@ -378,18 +382,6 @@ export default function WatchPage() {
                   <RefreshCw size={12} />
                   Next Source
                 </button>
-
-                {streamUrl && (
-                  <a
-                    href={streamUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white glass-card border border-white/10 px-3 py-1.5 rounded-lg transition-colors min-h-[36px]"
-                  >
-                    <ExternalLink size={12} />
-                    External
-                  </a>
-                )}
               </div>
             </div>
           </div>

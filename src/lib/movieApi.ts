@@ -1,4 +1,4 @@
-import type { ApiResponse, HomepageData, TrendingData, SearchData, Movie, MediaData } from "@/types/movie";
+import type { ApiResponse, HomepageData, SearchData, Movie, MediaData } from "@/types/movie";
 
 const BASE_URL = "https://gzmovieboxapi.vercel.app/api";
 const API_KEY = "Godszeal";
@@ -10,22 +10,37 @@ function buildUrl(endpoint: string, params: Record<string, string> = {}) {
   return url.toString();
 }
 
-export async function fetchTrending(): Promise<TrendingData> {
-  const res = await fetch(buildUrl("/trending"));
-  const json: ApiResponse<TrendingData> & { data: { subjectList: Movie[] } } = await res.json();
-  return json.data as unknown as TrendingData;
+export async function fetchTrending(): Promise<Movie[]> {
+  try {
+    const res = await fetch(buildUrl("/trending"));
+    const json = await res.json();
+    if (json.status === "success" && json.data) {
+      return (json.data.subjectList || json.data.items || json.data || []) as Movie[];
+    }
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 export async function fetchHomepage(): Promise<HomepageData> {
-  const res = await fetch(buildUrl("/homepage"));
-  const json: ApiResponse<HomepageData> = await res.json();
-  return json.data;
+  try {
+    const res = await fetch(buildUrl("/homepage"));
+    const json: ApiResponse<HomepageData> = await res.json();
+    return json.data;
+  } catch {
+    return {} as HomepageData;
+  }
 }
 
 export async function searchMovies(query: string, page = 1): Promise<SearchData> {
-  const res = await fetch(buildUrl("/search", { query, page: String(page) }));
-  const json = await res.json();
-  return json.data as SearchData;
+  try {
+    const res = await fetch(buildUrl("/search", { query, page: String(page) }));
+    const json = await res.json();
+    return (json.data || { items: [], pager: {} }) as SearchData;
+  } catch {
+    return { items: [], pager: {} } as unknown as SearchData;
+  }
 }
 
 export async function fetchMovieDetails(detailPath: string): Promise<Movie | null> {
@@ -72,8 +87,9 @@ export async function fetchHotMovies(): Promise<Movie[]> {
     const res = await fetch(buildUrl("/hot"));
     const json = await res.json();
     if (json.status === "success" && json.data) {
-      return (json.data.subjectList || json.data.items || json.data || []) as Movie[];
+      return (json.data.subjectList || json.data.items || (Array.isArray(json.data) ? json.data : []) || []) as Movie[];
     }
+    // Fallback: return trending if hot fails
     return [];
   } catch {
     return [];

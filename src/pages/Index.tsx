@@ -13,7 +13,7 @@ import { useWatchlist } from "@/hooks/useWatchlist";
 
 export default function Index() {
   const {
-    data: trendingData,
+    data: trendingMovies,
     isLoading: trendingLoading,
   } = useQuery({
     queryKey: ["trending"],
@@ -36,7 +36,7 @@ export default function Index() {
   const { items: continueWatching } = useContinueWatching();
   const { watchlist } = useWatchlist();
 
-  const trending = trendingData?.subjectList || [];
+  const trending = trendingMovies || [];
   const movies = trending.filter((m) => m.subjectType === 1);
   const series = trending.filter((m) => m.subjectType === 2);
   const heroMovies = trending.filter((m) => m.cover?.url);
