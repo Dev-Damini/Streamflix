@@ -8,17 +8,27 @@ async function fetchWithProxy(endpoint: string, params: Record<string, string> =
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
   const targetUrl = url.toString();
 
-  // Try direct first (works if API has CORS headers)
-  try {
-    const res = await fetch(targetUrl, { mode: "cors" });
-    if (res.ok) return res;
-  } catch {
-    // fall through to proxy
-  }
+  const makeRequest = async (proxyUrl: string): Promise<Response> => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      throw e;
+    }
+  };
 
-  // Fallback: allorigins proxy (works in production)
-  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-  return fetch(proxyUrl);
+  const proxyUrls = [
+    `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`,
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+  ];
+
+  // Race all proxies — fastest valid response wins
+  return Promise.any(proxyUrls.map(makeRequest));
 }
 
 export async function fetchTrending(): Promise<Movie[]> {
