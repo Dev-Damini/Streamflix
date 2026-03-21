@@ -14,6 +14,7 @@ import {
   Tv,
   Maximize,
   RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import MovieRow from "@/components/features/MovieRow";
