@@ -2,21 +2,31 @@ import type { ApiResponse, HomepageData, SearchData, Movie, MediaData } from "@/
 
 const BASE_URL = "https://gzmovieboxapi.vercel.app/api";
 const API_KEY = "Godszeal";
-const CORS_PROXY = "https://corsproxy.io/?url=";
-
-function buildUrl(endpoint: string, params: Record<string, string> = {}) {
+async function fetchWithProxy(endpoint: string, params: Record<string, string> = {}): Promise<Response> {
   const url = new URL(`${BASE_URL}${endpoint}`);
   url.searchParams.set("apikey", API_KEY);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  return CORS_PROXY + encodeURIComponent(url.toString());
+  const targetUrl = url.toString();
+
+  // Try direct first (works if API has CORS headers)
+  try {
+    const res = await fetch(targetUrl, { mode: "cors" });
+    if (res.ok) return res;
+  } catch {
+    // fall through to proxy
+  }
+
+  // Fallback: allorigins proxy (works in production)
+  const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+  return fetch(proxyUrl);
 }
 
 export async function fetchTrending(): Promise<Movie[]> {
   try {
-    const res = await fetch(buildUrl("/trending"));
+    const res = await fetchWithProxy("/trending");
     const json = await res.json();
     if (json.status === "success" && json.data) {
-      return (json.data.subjectList || json.data.items || json.data || []) as Movie[];
+      return (json.data.subjectList || json.data.items || (Array.isArray(json.data) ? json.data : []) || []) as Movie[];
     }
     return [];
   } catch {
@@ -26,7 +36,7 @@ export async function fetchTrending(): Promise<Movie[]> {
 
 export async function fetchHomepage(): Promise<HomepageData> {
   try {
-    const res = await fetch(buildUrl("/homepage"));
+    const res = await fetchWithProxy("/homepage");
     const json: ApiResponse<HomepageData> = await res.json();
     return json.data;
   } catch {
@@ -36,7 +46,7 @@ export async function fetchHomepage(): Promise<HomepageData> {
 
 export async function searchMovies(query: string, page = 1): Promise<SearchData> {
   try {
-    const res = await fetch(buildUrl("/search", { query, page: String(page) }));
+    const res = await fetchWithProxy("/search", { query, page: String(page) });
     const json = await res.json();
     return (json.data || { items: [], pager: {} }) as SearchData;
   } catch {
@@ -46,7 +56,7 @@ export async function searchMovies(query: string, page = 1): Promise<SearchData>
 
 export async function fetchMovieDetails(detailPath: string): Promise<Movie | null> {
   try {
-    const res = await fetch(buildUrl("/details", { id: detailPath }));
+    const res = await fetchWithProxy("/details", { id: detailPath });
     const json = await res.json();
     if (json.status === "success" && json.data) {
       return json.data as Movie;
@@ -59,7 +69,7 @@ export async function fetchMovieDetails(detailPath: string): Promise<Movie | nul
 
 export async function fetchMedia(subjectId: string): Promise<MediaData | null> {
   try {
-    const res = await fetch(buildUrl("/media", { id: subjectId }));
+    const res = await fetchWithProxy("/media", { id: subjectId });
     const json = await res.json();
     if (json.status === "success") {
       return json.data as MediaData;
@@ -72,10 +82,10 @@ export async function fetchMedia(subjectId: string): Promise<MediaData | null> {
 
 export async function fetchRecommendations(subject: string): Promise<Movie[]> {
   try {
-    const res = await fetch(buildUrl("/recommendations", { subject }));
+    const res = await fetchWithProxy("/recommendations", { subject });
     const json = await res.json();
     if (json.status === "success" && json.data) {
-      return (json.data.subjectList || json.data.items || json.data || []) as Movie[];
+      return (json.data.subjectList || json.data.items || (Array.isArray(json.data) ? json.data : []) || []) as Movie[];
     }
     return [];
   } catch {
@@ -85,12 +95,11 @@ export async function fetchRecommendations(subject: string): Promise<Movie[]> {
 
 export async function fetchHotMovies(): Promise<Movie[]> {
   try {
-    const res = await fetch(buildUrl("/hot"));
+    const res = await fetchWithProxy("/hot");
     const json = await res.json();
     if (json.status === "success" && json.data) {
       return (json.data.subjectList || json.data.items || (Array.isArray(json.data) ? json.data : []) || []) as Movie[];
     }
-    // Fallback: return trending if hot fails
     return [];
   } catch {
     return [];
@@ -99,7 +108,7 @@ export async function fetchHotMovies(): Promise<Movie[]> {
 
 export async function fetchPopularSearches(): Promise<string[]> {
   try {
-    const res = await fetch(buildUrl("/popular"));
+    const res = await fetchWithProxy("/popular");
     const json = await res.json();
     if (json.status === "success" && json.data) {
       if (Array.isArray(json.data)) return json.data as string[];
