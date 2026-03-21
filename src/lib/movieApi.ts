@@ -2,12 +2,13 @@ import type { ApiResponse, HomepageData, SearchData, Movie, MediaData } from "@/
 
 const BASE_URL = "https://gzmovieboxapi.vercel.app/api";
 const API_KEY = "Godszeal";
+const CORS_PROXY = "https://corsproxy.io/?url=";
 
 function buildUrl(endpoint: string, params: Record<string, string> = {}) {
   const url = new URL(`${BASE_URL}${endpoint}`);
   url.searchParams.set("apikey", API_KEY);
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  return url.toString();
+  return CORS_PROXY + encodeURIComponent(url.toString());
 }
 
 export async function fetchTrending(): Promise<Movie[]> {
