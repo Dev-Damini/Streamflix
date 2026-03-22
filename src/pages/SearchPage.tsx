@@ -36,7 +36,7 @@ export default function SearchPage() {
 
   const { data: searchData, isLoading, isFetching } = useQuery({
     queryKey: ["search", activeQuery],
-    queryFn: () => searchMovies(activeQuery),
+    queryFn: () => searchMovies(activeQuery, 1),
     enabled: !!activeQuery && activeQuery.length >= 2,
     staleTime: 1000 * 60 * 3,
   });

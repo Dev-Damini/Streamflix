@@ -1,12 +1,11 @@
 import { useParams, useLocation, useNavigate, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   ChevronLeft,
   Star,
   AlertCircle,
   Loader2,
-  Play,
   Film,
   Bookmark,
   BookmarkCheck,
@@ -14,13 +13,13 @@ import {
   Tv,
   Maximize,
   RefreshCw,
-  ExternalLink,
+  CheckCircle,
 } from "lucide-react";
 import Navbar from "@/components/layout/Navbar";
 import MovieRow from "@/components/features/MovieRow";
-import EpisodeSelector from "@/components/features/EpisodeSelector";
 import SubtitlePanel from "@/components/features/SubtitlePanel";
-import { fetchMedia, fetchRecommendations, formatDuration, getYear } from "@/lib/movieApi";
+import { fetchRecommendations, fetchShowBoxStreams, formatDuration, getYear } from "@/lib/movieApi";
+import type { ShowBoxStream } from "@/lib/movieApi";
 import { useWatchlist } from "@/hooks/useWatchlist";
 import { useContinueWatching } from "@/hooks/useContinueWatching";
 import type { Movie } from "@/types/movie";
@@ -30,21 +29,26 @@ export default function WatchPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const movie = location.state?.movie as Movie | undefined;
+
+  const [selectedStream, setSelectedStream] = useState<ShowBoxStream | null>(null);
+  const [currentSeason, setCurrentSeason] = useState(1);
+  const [currentEpisode, setCurrentEpisode] = useState(1);
   const [playerError, setPlayerError] = useState(false);
-  const [selectedStream, setSelectedStream] = useState<string | null>(null);
-  const [currentEpisodeLabel, setCurrentEpisodeLabel] = useState<string | null>(null);
-  const [embedKey, setEmbedKey] = useState(0);
-  const [providerIndex, setProviderIndex] = useState(0);
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const { toggleWatchlist, isInWatchlist } = useWatchlist();
-  const { addOrUpdate } = useContinueWatching();
+  const { addOrUpdate, getProgress } = useContinueWatching();
 
-  const { data: mediaData, isLoading } = useQuery({
-    queryKey: ["media", movie?.subjectId],
-    queryFn: () => fetchMedia(movie?.subjectId || ""),
-    enabled: !!movie?.subjectId,
-    staleTime: 1000 * 60 * 5,
+  const isSeries = movie?.subjectType === 2;
+
+  // Fetch real MP4 streams from ShowBox
+  const { data: streamResult, isLoading: streamLoading } = useQuery({
+    queryKey: ["showbox-streams", movie?.title, isSeries, currentSeason, currentEpisode],
+    queryFn: () =>
+      fetchShowBoxStreams(movie?.title || "", isSeries, currentSeason, currentEpisode),
+    enabled: !!movie?.title,
+    staleTime: 1000 * 60 * 10,
+    retry: 1,
   });
 
   const { data: recommendations } = useQuery({
@@ -53,6 +57,23 @@ export default function WatchPage() {
     enabled: !!movie?.title,
     staleTime: 1000 * 60 * 10,
   });
+
+  // Auto-select best quality stream when results arrive
+  useEffect(() => {
+    if (streamResult?.streams && streamResult.streams.length > 0 && !selectedStream) {
+      // Prefer 480p, fallback to first available
+      const preferred =
+        streamResult.streams.find((s) => s.quality === "480p") ||
+        streamResult.streams[0];
+      setSelectedStream(preferred);
+    }
+  }, [streamResult]);
+
+  // Reset stream when episode changes
+  useEffect(() => {
+    setSelectedStream(null);
+    setPlayerError(false);
+  }, [currentSeason, currentEpisode]);
 
   // Track progress for Continue Watching
   useEffect(() => {
@@ -70,7 +91,20 @@ export default function WatchPage() {
     };
     video.addEventListener("timeupdate", handleTimeUpdate);
     return () => video.removeEventListener("timeupdate", handleTimeUpdate);
-  }, [movie, addOrUpdate]);
+  }, [movie, addOrUpdate, selectedStream]);
+
+  const handleFullscreen = () => {
+    const el = playerContainerRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      el.requestFullscreen().catch(() => {
+        const video = el.querySelector("video");
+        if (video) (video as HTMLVideoElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen?.();
+      });
+    }
+  };
 
   if (!movie) {
     return (
@@ -86,123 +120,26 @@ export default function WatchPage() {
     );
   }
 
-  // Multiple embed providers — cycle through on error
-  const getEmbedProviders = useCallback((): string[] => {
-    if (!movie?.title) return [];
-    const title = encodeURIComponent(movie.title);
-    const year = movie.releaseDate ? movie.releaseDate.substring(0, 4) : "";
-    const titleSlug = movie.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const isSeries = movie.subjectType === 2;
-    if (isSeries) {
-      const s = currentEpisodeLabel ? parseInt(currentEpisodeLabel.match(/S(\d+)/)?.[1] || "1") : 1;
-      const e = currentEpisodeLabel ? parseInt(currentEpisodeLabel.match(/E(\d+)/)?.[1] || "1") : 1;
-      return [
-        `https://player.autoembed.cc/embed/tv/${title}/${s}/${e}`,
-        `https://multiembed.mov/?video_id=${title}&tmdb=0&s=${s}&e=${e}`,
-        `https://vidsrc.me/embed/tv?title=${title}&s=${s}&e=${e}`,
-        `https://embed.su/embed/tv/${titleSlug}/${s}/${e}`,
-        `https://www.2embed.cc/embedtv/${title}?s=${s}&e=${e}`,
-      ];
-    }
-    return [
-      `https://player.autoembed.cc/embed/movie/${title}${year ? `?year=${year}` : ""}`,
-      `https://multiembed.mov/?video_id=${title}&tmdb=0`,
-      `https://vidsrc.me/embed/movie?title=${title}`,
-      `https://embed.su/embed/movie/${titleSlug}`,
-      `https://www.2embed.cc/embed/${title}`,
-    ];
-  }, [movie, currentEpisodeLabel]);
-
-  // Build embed URL
-  const getStreamUrl = (): string | null => {
-    if (selectedStream) return selectedStream;
-
-    // First try to extract a direct stream from media API
-    if (mediaData) {
-      const data = mediaData as Record<string, unknown>;
-      const directFields = ["m3u8", "video", "url", "stream", "src", "source", "link", "playUrl", "playurl"];
-      for (const field of directFields) {
-        if (typeof data[field] === "string" && (data[field] as string).startsWith("http")) {
-          return data[field] as string;
-        }
-      }
-      for (const key of ["streams", "items", "links", "sources", "videos"]) {
-        const arr = data[key] as Array<{ url?: string; src?: string }> | undefined;
-        if (Array.isArray(arr) && arr.length > 0) {
-          return arr[0].url || arr[0].src || null;
-        }
-      }
-    }
-
-    // Use embed providers (cycle on error)
-    const providers = getEmbedProviders();
-    if (providers.length > 0) {
-      return providers[providerIndex % providers.length];
-    }
-
-    return null;
-  };
-
-  const streamUrl = getStreamUrl();
-
-  const getAllStreams = () => {
-    if (!mediaData) return [];
-    const data = mediaData as Record<string, unknown>;
-    const streams = data.streams as Array<{ url: string; quality?: string; label?: string }> | undefined;
-    if (Array.isArray(streams)) return streams;
-    return [];
-  };
-
-  const getDownloadUrl = (): string | null => {
-    if (!mediaData) return null;
-    const data = mediaData as Record<string, unknown>;
-    const links = data.downloadLinks as Array<{ url: string; quality?: string }> | undefined;
-    if (Array.isArray(links) && links[0]?.url) return links[0].url;
-    return streamUrl;
-  };
-
-  const allStreams = getAllStreams();
-  const downloadUrl = getDownloadUrl();
+  const streams = streamResult?.streams || [];
+  const activeStreamUrl = selectedStream?.proxyUrl || null;
+  const activeDownloadUrl = selectedStream?.downloadUrl || null;
   const rating = parseFloat(movie.imdbRatingValue);
   const inWatchlist = isInWatchlist(movie.subjectId);
+  const progress = getProgress(movie.subjectId);
 
-  const isM3U8 = streamUrl?.includes("m3u8");
-  const isMP4 = streamUrl?.includes(".mp4");
-  const isDirectVideo = isM3U8 || isMP4;
-  const shouldUseIframe = streamUrl && !isDirectVideo;
+  // Episode navigation for series
+  const maxSeason = 10; // Will be overridden by ShowBox data when available
+  const totalEpisodes = isSeries ? 24 : 0; // Generous default
 
-  const handleTryNextProvider = () => {
-    const providers = getEmbedProviders();
-    const next = (providerIndex + 1) % providers.length;
-    setProviderIndex(next);
-    setSelectedStream(null);
-    setPlayerError(false);
-    setEmbedKey((k) => k + 1);
-  };
-
-  const handleFullscreen = () => {
-    const el = playerContainerRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) {
-      document.exitFullscreen();
-    } else {
-      el.requestFullscreen().catch(() => {
-        // Fallback: try to go fullscreen on the iframe itself
-        const iframe = el.querySelector("iframe");
-        if (iframe) (iframe as HTMLIFrameElement & { webkitRequestFullscreen?: () => void }).webkitRequestFullscreen?.();
-      });
-    }
-  };
-
-  const handleEpisodeSelect = (url: string, label: string) => {
-    setSelectedStream(url);
-    setCurrentEpisodeLabel(label);
-    setPlayerError(false);
-    setEmbedKey((k) => k + 1);
+  const goToEpisode = (season: number, episode: number) => {
+    setCurrentSeason(season);
+    setCurrentEpisode(episode);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const isSeries = movie.subjectType === 2;
+  // Build season/episode rows for series
+  const seasonEpisodes = Array.from({ length: Math.min(totalEpisodes, 24) }, (_, i) => i + 1);
+  const seasons = Array.from({ length: Math.min(maxSeason, 10) }, (_, i) => i + 1);
 
   return (
     <div className="min-h-screen bg-background">
@@ -216,67 +153,54 @@ export default function WatchPage() {
             className="flex items-center gap-1.5 text-white/50 hover:text-white transition-colors text-sm"
           >
             <ChevronLeft size={16} />
-            Back to details
+            Back
           </button>
         </div>
 
-        {/* Player Area */}
         <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
           {/* Now Playing label */}
-          {currentEpisodeLabel && (
+          {isSeries && (
             <div className="flex items-center gap-2 mb-3">
               <Tv size={14} className="text-primary" />
               <span className="text-sm font-semibold text-white">
-                Playing {currentEpisodeLabel}
+                Season {currentSeason} · Episode {currentEpisode}
               </span>
             </div>
           )}
 
+          {/* Player */}
           <div className="rounded-2xl overflow-hidden bg-black border border-white/10 shadow-2xl shadow-black/60">
-            {/* 16:9 player */}
             <div className="relative w-full" style={{ paddingBottom: "56.25%" }}>
               <div ref={playerContainerRef} className="absolute inset-0 bg-black">
-                {isLoading ? (
+                {streamLoading ? (
                   <div className="w-full h-full flex flex-col items-center justify-center gap-3 bg-black">
                     <Loader2 size={36} className="text-primary animate-spin" />
-                    <p className="text-white/50 text-sm">Loading stream...</p>
+                    <p className="text-white/50 text-sm">Finding stream...</p>
+                    <p className="text-white/25 text-xs">{movie.title}</p>
                   </div>
-                ) : streamUrl && !playerError ? (
-                  isDirectVideo ? (
+                ) : activeStreamUrl && !playerError ? (
+                  <>
                     <video
                       ref={videoRef}
-                      src={streamUrl}
+                      key={activeStreamUrl}
+                      src={activeStreamUrl}
                       controls
                       autoPlay
+                      playsInline
                       className="w-full h-full bg-black"
-                      crossOrigin="anonymous"
                       onError={() => setPlayerError(true)}
                       style={{ outline: "none" }}
                     />
-                  ) : (
-                    <>
-                      <iframe
-                        key={embedKey}
-                        src={streamUrl}
-                        className="w-full h-full border-0"
-                        allowFullScreen
-                        allow="autoplay; fullscreen; picture-in-picture; encrypted-media; accelerometer; gyroscope; payment; clipboard-write"
-                        title={movie.title}
-                        referrerPolicy="no-referrer"
-                      />
-                      {/* Fullscreen tap overlay — bottom-right corner */}
-                      <button
-                        onClick={handleFullscreen}
-                        className="absolute bottom-3 right-3 z-10 w-10 h-10 rounded-full bg-black/60 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-black/80 transition-colors"
-                        title="Fullscreen"
-                        aria-label="Toggle fullscreen"
-                      >
-                        <Maximize size={18} />
-                      </button>
-                    </>
-                  )
+                    {/* Fullscreen button */}
+                    <button
+                      onClick={handleFullscreen}
+                      className="absolute bottom-14 right-3 z-10 w-10 h-10 rounded-full bg-black/70 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-black/90 transition-colors"
+                      title="Fullscreen"
+                    >
+                      <Maximize size={18} />
+                    </button>
+                  </>
                 ) : (
-                  /* Fallback / No stream */
                   <div className="w-full h-full flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-[#0d0d0d] to-black p-8 text-center relative">
                     {movie.cover?.url && (
                       <div className="absolute inset-0 opacity-10">
@@ -294,39 +218,39 @@ export default function WatchPage() {
                       </div>
                       <div>
                         <h3 className="text-lg font-bold text-white mb-1">
-                          {playerError ? "Source Unavailable" : "Loading Player..."}
+                          {playerError
+                            ? "Stream Error"
+                            : streams.length === 0
+                            ? "Stream Not Found"
+                            : "Select a Quality"}
                         </h3>
                         <p className="text-sm text-white/50 max-w-xs">
-                          Try a different source or open externally.
+                          {playerError
+                            ? "The stream encountered an error. Try a different quality."
+                            : streams.length === 0
+                            ? "This title isn't available in the stream catalog yet."
+                            : "Choose a quality below to start watching."}
                         </p>
                       </div>
-                      <div className="flex items-center gap-3">
+                      {playerError && (
                         <button
-                          onClick={handleTryNextProvider}
+                          onClick={() => {
+                            setPlayerError(false);
+                            setSelectedStream(streams[0] || null);
+                          }}
                           className="flex items-center gap-2 bg-primary hover:bg-primary/90 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
                         >
                           <RefreshCw size={14} />
-                          Try Next Source
+                          Retry
                         </button>
-                        {streamUrl && (
-                          <a
-                            href={streamUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 glass-dark border border-white/10 text-white/70 text-sm px-4 py-2 rounded-lg hover:text-white transition-colors"
-                          >
-                            <ExternalLink size={14} />
-                            Open External
-                          </a>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Info Bar */}
+            {/* Info bar */}
             <div className="bg-[#0a0a0a] px-5 py-3 flex items-center justify-between gap-4 border-t border-white/5 flex-wrap">
               <div className="flex items-center gap-3 min-w-0">
                 {movie.cover?.url && (
@@ -339,9 +263,14 @@ export default function WatchPage() {
                     {movie.duration > 0 && <span>{formatDuration(movie.duration)}</span>}
                     {rating > 0 && (
                       <div className="flex items-center gap-1">
-                        <Star size={10} fill="#facc15" className="rating-gold" />
+                        <Star size={10} fill="#facc15" className="text-yellow-400" />
                         <span>{rating.toFixed(1)}</span>
                       </div>
+                    )}
+                    {streamResult?.quality && (
+                      <span className="bg-primary/20 text-primary px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase">
+                        {streamResult.quality}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -360,54 +289,81 @@ export default function WatchPage() {
                   {inWatchlist ? "Saved" : "Save"}
                 </button>
 
-                {/* Download button */}
-                {downloadUrl && (
+                {activeDownloadUrl && (
                   <a
-                    href={downloadUrl}
-                    download
+                    href={activeDownloadUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border glass-card border-white/10 text-white/50 hover:text-white transition-colors min-h-[36px]"
-                    title="Download to device"
                   >
                     <Download size={13} />
                     Download
                   </a>
                 )}
-
-                <button
-                  onClick={handleTryNextProvider}
-                  className="flex items-center gap-1.5 text-xs text-white/50 hover:text-white glass-card border border-white/10 px-3 py-1.5 rounded-lg transition-colors min-h-[36px]"
-                  title="Try a different source"
-                >
-                  <RefreshCw size={12} />
-                  Next Source
-                </button>
               </div>
             </div>
           </div>
 
           {/* Quality Selector */}
-          {allStreams.length > 1 && (
+          {streams.length > 0 && (
             <div className="mt-4 flex items-center gap-3 flex-wrap">
-              <span className="text-xs text-white/40">Quality:</span>
-              {allStreams.map((stream, i) => (
-                <button
-                  key={i}
-                  onClick={() => { setSelectedStream(stream.url); setPlayerError(false); }}
-                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors min-h-[36px] ${
-                    (selectedStream || allStreams[0]?.url) === stream.url
-                      ? "bg-primary border-primary text-white"
-                      : "border-white/15 text-white/50 hover:text-white glass-card"
-                  }`}
+              <span className="text-xs text-white/40 font-medium">Quality:</span>
+              {streams.map((stream, i) => {
+                const isActive = selectedStream?.quality === stream.quality;
+                return (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setSelectedStream(stream);
+                      setPlayerError(false);
+                    }}
+                    className={`flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-lg border transition-all min-h-[36px] ${
+                      isActive
+                        ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                        : "glass-card border-white/15 text-white/60 hover:text-white hover:border-white/30"
+                    }`}
+                  >
+                    {isActive && <CheckCircle size={12} />}
+                    {stream.quality}
+                    {stream.format && (
+                      <span className={`text-[10px] ${isActive ? "text-white/70" : "text-white/30"}`}>
+                        {stream.format}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+              {streams[0]?.downloadUrl && (
+                <a
+                  href={streams.find((s) => s.quality === "720p")?.downloadUrl || streams[0].downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 text-xs font-medium px-4 py-2 rounded-lg border glass-card border-white/15 text-white/50 hover:text-white transition-colors min-h-[36px]"
                 >
-                  {stream.quality || stream.label || `Source ${i + 1}`}
-                </button>
-              ))}
+                  <Download size={12} />
+                  Download
+                </a>
+              )}
             </div>
           )}
 
-          {/* Movie quick info */}
+          {/* Progress bar */}
+          {progress > 0 && (
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-xs text-white/30">Progress</span>
+                <span className="text-xs text-white/40">{Math.round(progress)}%</span>
+              </div>
+              <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Movie info grid */}
           <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {[
               { label: "Genre", value: movie.genre || "—" },
@@ -428,24 +384,52 @@ export default function WatchPage() {
             ))}
           </div>
 
-          {/* Subtitle Panel */}
-          {(() => {
-            const mediaSubs = (mediaData as Record<string, unknown> | null)
-              ?.subtitles as { url: string; lang: string; label: string }[] | undefined;
-            return (
-              <div className="mt-5">
-                <SubtitlePanel
-                  tracks={mediaSubs}
-                  subtitleString={movie.subtitles}
-                />
-              </div>
-            );
-          })()}
+          {/* Subtitle panel */}
+          <div className="mt-5">
+            <SubtitlePanel tracks={undefined} subtitleString={movie.subtitles} />
+          </div>
 
-          {/* Episode Selector — only for TV series */}
+          {/* Season/Episode selector for TV Series */}
           {isSeries && (
             <div className="mt-6">
-              <EpisodeSelector movie={movie} onSelectEpisode={handleEpisodeSelect} />
+              <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+                <Tv size={16} className="text-primary" />
+                Episodes
+              </h3>
+
+              {/* Season tabs */}
+              <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 mb-4">
+                {seasons.slice(0, 6).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => { setCurrentSeason(s); setCurrentEpisode(1); }}
+                    className={`shrink-0 px-4 py-2 rounded-lg text-xs font-semibold border transition-all min-h-[36px] ${
+                      currentSeason === s
+                        ? "bg-primary border-primary text-white"
+                        : "glass-card border-white/15 text-white/50 hover:text-white"
+                    }`}
+                  >
+                    Season {s}
+                  </button>
+                ))}
+              </div>
+
+              {/* Episode grid */}
+              <div className="grid grid-cols-4 sm:grid-cols-8 lg:grid-cols-12 gap-2">
+                {seasonEpisodes.map((ep) => (
+                    <button
+                      key={ep}
+                      onClick={() => goToEpisode(currentSeason, ep)}
+                      className={`aspect-square rounded-lg text-xs font-bold border transition-all flex items-center justify-center min-h-[40px] ${
+                        currentEpisode === ep
+                          ? "bg-primary border-primary text-white shadow-lg shadow-primary/20"
+                          : "glass-card border-white/10 text-white/50 hover:text-white hover:border-white/25"
+                      }`}
+                    >
+                      {ep}
+                    </button>
+                  ))}
+              </div>
             </div>
           )}
         </div>

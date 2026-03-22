@@ -20,7 +20,7 @@ export default function TrendingPage() {
     staleTime: 1000 * 60 * 5,
   });
 
-  const trending: Movie[] = trendingData?.subjectList || [];
+  const trending: Movie[] = trendingData || [];
 
   const typeFiltered =
     filterType === "ALL"
