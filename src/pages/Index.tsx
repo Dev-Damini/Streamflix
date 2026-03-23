@@ -227,10 +227,7 @@ export default function Index() {
             <p className="text-xs text-white/25 text-center">
               Stream your favorite movies and TV shows in HD. New content added daily.
             </p>
-            <div className="flex flex-col items-end gap-0.5">
-              <p className="text-xs text-white/20">© 2026 Streamflix</p>
-              <p className="text-[10px] text-white/15 tracking-wide">Damini codesphere</p>
-            </div>
+            <p className="text-xs text-white/20">Streamflix 2026 — Damini codesphere</p>
           </div>
         </div>
       </footer>
