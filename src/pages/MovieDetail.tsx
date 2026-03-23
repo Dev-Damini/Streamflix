@@ -24,6 +24,7 @@ import {
   fetchMovieDetails,
   fetchRecommendations,
   fetchMedia,
+  searchShowBox,
   formatDuration,
   getYear,
   getTypeLabel,
@@ -77,6 +78,26 @@ export default function MovieDetail() {
     queryFn: () => fetchRecommendations(movie?.title || ""),
     enabled: !!movie?.title,
     staleTime: 1000 * 60 * 10,
+  });
+
+  // Fetch ShowBox data to get real YouTube trailer URL
+  const { data: showboxTrailerUrl } = useQuery<string | null>({
+    queryKey: ["showbox-trailer", movie?.title, movie?.subjectType],
+    queryFn: async () => {
+      if (!movie?.title) return null;
+      const type = movie.subjectType === 1 ? "movie" : "tv";
+      const id = await searchShowBox(movie.title, type);
+      if (!id) return null;
+      // Fetch ShowBox movie/tv detail to get trailer_url
+      const endpoint = type === "movie" ? "/showbox/movie" : "/showbox/tv";
+      const res = await fetch(
+        `https://movieapi.xcasper.space/api${endpoint}?id=${id}${type === "tv" ? "&season=1&episode=1" : ""}`
+      );
+      const json = await res.json();
+      return (json.data?.trailer_url as string) || null;
+    },
+    enabled: !!movie?.title,
+    staleTime: 1000 * 60 * 30,
   });
 
   // Prefetch media for download links
@@ -160,7 +181,7 @@ export default function MovieDetail() {
       <Navbar />
 
       {showTrailer && (
-        <TrailerModal title={movie.title} onClose={() => setShowTrailer(false)} />
+        <TrailerModal title={movie.title} trailerUrl={showboxTrailerUrl || undefined} onClose={() => setShowTrailer(false)} />
       )}
 
       {/* Backdrop */}
