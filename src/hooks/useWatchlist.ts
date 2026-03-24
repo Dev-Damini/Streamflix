@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Movie } from "@/types/movie";
 
-const STORAGE_KEY = "streamflix_watchlist";
+const STORAGE_KEY = "nickflix_watchlist";
 
 export function getWatchlist(): Movie[] {
   try {

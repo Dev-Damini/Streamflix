@@ -57,7 +57,7 @@ export default function Navbar() {
               <Film size={18} className="text-white" />
             </div>
             <span className="text-xl font-display tracking-widest text-gradient-red hidden sm:block">
-              STREAMFLIX
+              NICKFLIX
             </span>
           </Link>
 

@@ -221,13 +221,13 @@ export default function Index() {
                 <Film size={14} className="text-white" />
               </div>
               <span className="text-lg font-display tracking-widest text-gradient-red">
-                STREAMFLIX
+                NICKFLIX
               </span>
             </div>
             <p className="text-xs text-white/25 text-center">
               Stream your favorite movies and TV shows in HD. New content added daily.
             </p>
-            <p className="text-xs text-white/20">Streamflix 2026 — Damini codesphere</p>
+            <p className="text-xs text-white/20">© 2026 Nickflix</p>
           </div>
         </div>
       </footer>

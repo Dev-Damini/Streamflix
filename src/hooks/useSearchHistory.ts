@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 
-const STORAGE_KEY = "streamflix_search_history";
+const STORAGE_KEY = "nickflix_search_history";
 const MAX_ITEMS = 10;
 
 export function getSearchHistory(): string[] {

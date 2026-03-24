@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import type { Movie } from "@/types/movie";
 
-const STORAGE_KEY = "streamflix_continue_watching";
+const STORAGE_KEY = "nickflix_continue_watching";
 const MAX_ITEMS = 8;
 
 export interface ContinueWatchingItem {
